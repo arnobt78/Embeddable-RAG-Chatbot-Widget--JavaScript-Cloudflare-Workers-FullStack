@@ -3,6 +3,8 @@
 	"name": "ai-chatbot-widget",
 	"main": "src/index.js",
 	"compatibility_date": "2025-12-23",
+	// Required by @sentry/cloudflare (node:async_hooks)
+	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true
 	},

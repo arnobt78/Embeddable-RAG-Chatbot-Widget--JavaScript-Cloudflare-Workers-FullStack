@@ -3,27 +3,26 @@
 | Field | Value |
 |---|---|
 | Cycle | C1 |
-| Last run | 2026-08-11 (DEC-0007 Rate Limiting) |
+| Last run | 2026-08-11 (DEC-0008 audit) |
 | Eval gate | N/A (pre Gate 2) |
-
-## Scripts
-
-`build:css` | `dev` | `deploy`
 
 ## Checks
 
 | Check | Result | Notes |
 |---|---|---|
 | `node --check src/index.js` | PASS | |
-| Rate limit wiring | PASS | `CHAT_LIMITER.limit`; no `rl:chat:` KV |
-| `wrangler deploy --dry-run` | PASS | Shows `env.CHAT_LIMITER (20 requests/60s)` |
-| Seed auth | PASS (code) | fail-closed `SEED_SECRET` |
-| robots.txt | PASS | AI scrapers Disallow |
-| Live CHAT_LIMITER | PENDING | needs push/deploy |
+| `wrangler deploy --dry-run` | PASS | `nodejs_compat`; CHAT_LIMITER; Sentry bundle |
+| CHAT_LIMITER | PASS | no KV race |
+| Sentry wrap + tunnel | PASS | `withSentry`, `monitoring()`, allowlist |
+| Vendor browser SDK | PASS | `public/vendor/sentry-browser.min.js` |
+| `.dev.vars` gitignored | PASS | |
+| Live Sentry after deploy | PENDING | needs push |
 
 ## VAL
 
 | ID | Claim | Result |
 |---|---|---|
-| VAL-0009 | Chat rate limit race fixed | PASS (code) — Rate Limiting binding |
-| VAL-0011 | Dry-run exposes CHAT_LIMITER | PASS |
+| VAL-0009 | Rate limit race fixed | PASS |
+| VAL-0012 | Monitoring DSN allowlist | PASS |
+| VAL-0013 | Widget tunnel (not direct sentry.io) | PASS |
+| VAL-0014 | N/A densify/Zod/Redis/Vite for this stack | N/A |

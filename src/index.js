@@ -7,7 +7,9 @@
  * - Session management via KV storage
  * - Streaming AI responses using Workers AI (free-plan chat + embedding models)
  * - Static asset serving with aggressive caching
+ * - Sentry error reporting (@sentry/cloudflare) + POST /api/monitoring tunnel for browser SDK
  */
+import * as Sentry from "@sentry/cloudflare";
 
 // Workers AI model IDs (centralized — swap here only when Cloudflare catalog changes)
 // Chat: @cf/meta/llama-3-8b-instruct was deprecated 2026-05-30; -fast variant remains active on free plan
@@ -27,6 +29,9 @@ const TTL = 30 * 24 * 60 * 60;
 
 // Chat abuse cap: Rate Limiting binding window (seconds) — must match wrangler.jsonc period
 const CHAT_RATE_WINDOW_S = 60;
+
+// Max envelope size for POST /api/monitoring (ad-blocker bypass tunnel) — reject oversized abuse
+const MAX_MONITOR_BYTES = 256 * 1024;
 
 // CORS headers - allows cross-origin requests from any domain
 const cors = { "Access-Control-Allow-Origin": "*" };
@@ -128,6 +133,106 @@ async function assertChatRateLimit(req, env) {
 }
 
 /**
+ * Parse Sentry DSN → ingest host + project id (used by tunnel allowlist).
+ * @param {string} dsn
+ * @returns {{ host: string, projectId: string } | null}
+ */
+function parseSentryDsn(dsn) {
+  try {
+    const u = new URL(dsn);
+    const projectId = u.pathname.replace(/^\//, "").split("/")[0];
+    if (!u.hostname || !projectId) return null;
+    return { host: u.hostname, projectId };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Report exception to Sentry when DSN is configured (no-op otherwise).
+ * @param {unknown} err
+ * @param {Record<string, unknown>} [extra]
+ */
+function captureErr(err, extra) {
+  try {
+    Sentry.captureException(err, extra ? { extra } : undefined);
+  } catch {
+    // Never let observability break the Worker response path
+  }
+}
+
+/**
+ * POST /api/monitoring — same-origin Sentry envelope tunnel (bypasses ad blockers).
+ * Allowlists host + project id from env.SENTRY_DSN only (not an open proxy).
+ *
+ * @param {Request} req
+ * @param {Object} env
+ * @returns {Promise<Response>}
+ */
+async function monitoring(req, env) {
+  if (req.method !== "POST")
+    return new Response("Method not allowed", { status: 405, headers: cors });
+
+  if (!env.SENTRY_DSN) {
+    return json({ error: "Monitoring not configured" }, 503);
+  }
+
+  const allowed = parseSentryDsn(env.SENTRY_DSN);
+  if (!allowed) {
+    return json({ error: "Invalid SENTRY_DSN" }, 503);
+  }
+
+  const declared = Number(req.headers.get("content-length") || 0);
+  if (declared > MAX_MONITOR_BYTES) {
+    return json({ error: "Payload too large" }, 413);
+  }
+
+  let envelopeBytes;
+  try {
+    envelopeBytes = await req.arrayBuffer();
+  } catch (err) {
+    captureErr(err, { route: "/api/monitoring", phase: "read" });
+    return json({ error: "Bad request" }, 400);
+  }
+
+  if (envelopeBytes.byteLength > MAX_MONITOR_BYTES) {
+    return json({ error: "Payload too large" }, 413);
+  }
+
+  try {
+    const envelope = new TextDecoder().decode(envelopeBytes);
+    const headerLine = envelope.split("\n")[0];
+    const header = JSON.parse(headerLine);
+    const dsn = new URL(header.dsn);
+    const projectId = dsn.pathname.replace(/^\//, "").split("/")[0];
+
+    if (dsn.hostname !== allowed.host || projectId !== allowed.projectId) {
+      return json({ error: "Invalid DSN" }, 403);
+    }
+
+    const upstream = `https://${allowed.host}/api/${projectId}/envelope/`;
+    const upstreamRes = await fetch(upstream, {
+      method: "POST",
+      body: envelopeBytes,
+      headers: {
+        "Content-Type":
+          req.headers.get("Content-Type") || "application/x-sentry-envelope",
+      },
+    });
+
+    // Pass through Sentry status; empty body is fine for the browser SDK
+    return new Response(null, {
+      status: upstreamRes.status,
+      headers: cors,
+    });
+  } catch (err) {
+    console.error("monitoring tunnel failed:", err);
+    captureErr(err, { route: "/api/monitoring" });
+    return json({ error: "Tunnel failed" }, 500);
+  }
+}
+
+/**
  * Cache-Control for static assets: short TTL for HTML/robots; long for JS/CSS.
  * @param {string} pathname
  * @returns {string}
@@ -199,8 +304,9 @@ async function faq(env, q) {
       .map((m) => `Q: ${m.metadata?.question}\nA: ${m.metadata?.answer}`)
       .join("\n\n");
   } catch (err) {
-    // Log for Workers Observability; degrade gracefully so chat still streams without FAQ context
+    // Log + Sentry; degrade gracefully so chat still streams without FAQ context
     console.error("RAG faq() failed:", err);
+    captureErr(err, { route: "faq" });
     return "";
   }
 }
@@ -273,6 +379,8 @@ async function chat(req, env) {
     stream = await runChatStream(env, msgs);
   } catch (err) {
     console.error("All chat models failed:", err);
+    // Notify operator when demo AI path is fully down (primary + fallback)
+    captureErr(err, { route: "/api/chat", models: CHAT_MODELS });
     return json({ error: "AI temporarily unavailable" }, 503);
   }
   
@@ -471,69 +579,87 @@ async function seed(req, env) {
     return json({ success: true, count: faqs.length });
   } catch (err) {
     console.error("seed() failed:", err);
+    captureErr(err, { route: "/api/seed" });
     return json({ error: "Seed failed" }, 500);
   }
 }
 
 /**
  * Main Worker export - Request router
- * 
- * This is the entry point for all requests to the Worker.
- * Routes requests to appropriate handlers:
- * - API endpoints: /api/chat, /api/history, /api/seed, /api/health
- * - Static assets: widget.js, styles.css, index.html (served with aggressive caching)
- * 
+ *
+ * Entry point wrapped with Sentry.withSentry (enabled when env.SENTRY_DSN is set).
+ * Routes:
+ * - API: /api/chat, /api/history, /api/seed, /api/health, /api/monitoring
+ * - Static assets: widget.js, styles.css, vendor/sentry-browser.min.js, index.html
+ *
  * @param {Request} req - HTTP request
- * @param {Object} env - Cloudflare environment bindings (KV, Vectorize, AI, ASSETS)
+ * @param {Object} env - Cloudflare environment bindings (KV, Vectorize, AI, ASSETS, CHAT_LIMITER)
  */
-export default {
-  async fetch(req, env) {
-    const p = new URL(req.url).pathname;
-    
-    // Handle CORS preflight requests
-    if (req.method === "OPTIONS")
-      return new Response(null, {
-        headers: {
-          ...cors,
-          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-          "Access-Control-Allow-Headers":
-            "Content-Type, Authorization, X-Seed-Secret",
-        },
-      });
-    
-    // API route handlers
-    if (p === "/api/chat") return chat(req, env);
-    
-    // History endpoint: retrieves conversation history from KV storage
-    if (p === "/api/history") {
-      const s = cookie(req);
-      return json({
-        messages: s
-          ? (await env.CHAT_SESSIONS.get(s, "json"))?.messages || []
-          : [],
-      });
-    }
-    
-    // Seed endpoint: populates Vectorize index with FAQ embeddings
-    if (p === "/api/seed") return seed(req, env);
-    
-    // Health check endpoint
-    if (p === "/api/health") return json({ status: "ok" });
-    
-    // Serve static assets (widget.js, styles.css, index.html, robots.txt)
-    const assetResponse = await env.ASSETS.fetch(req);
-    if (assetResponse.ok) {
-      const newHeaders = new Headers(assetResponse.headers);
-      // Short cache for HTML/robots; long immutable cache for versioned JS/CSS
-      newHeaders.set("Cache-Control", assetCacheControl(p));
-      newHeaders.set("X-Content-Type-Options", "nosniff");
-      
-      return new Response(assetResponse.body, {
-        status: assetResponse.status,
-        statusText: assetResponse.statusText,
-        headers: newHeaders,
-      });
-    }
-    return assetResponse;
+export default Sentry.withSentry(
+  (env) => ({
+    // Secret: wrangler secret put SENTRY_DSN (or .dev.vars locally)
+    dsn: env.SENTRY_DSN || undefined,
+    enabled: Boolean(env.SENTRY_DSN),
+    // Low sample rate — demo traffic; errors still captured at 100%
+    tracesSampleRate: 0.05,
+  }),
+  {
+    async fetch(req, env) {
+      const p = new URL(req.url).pathname;
+
+      // Handle CORS preflight requests (includes monitoring tunnel for embeds)
+      if (req.method === "OPTIONS")
+        return new Response(null, {
+          headers: {
+            ...cors,
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, X-Seed-Secret",
+          },
+        });
+
+      // API route handlers
+      if (p === "/api/chat") return chat(req, env);
+
+      // History endpoint: retrieves conversation history from KV storage
+      if (p === "/api/history") {
+        const s = cookie(req);
+        return json({
+          messages: s
+            ? (await env.CHAT_SESSIONS.get(s, "json"))?.messages || []
+            : [],
+        });
+      }
+
+      // Seed endpoint: populates Vectorize index with FAQ embeddings
+      if (p === "/api/seed") return seed(req, env);
+
+      // Browser Sentry envelope tunnel (ad-blocker bypass)
+      if (p === "/api/monitoring") return monitoring(req, env);
+
+      // Health + public client DSN (Sentry browser DSN is designed to be public)
+      if (p === "/api/health") {
+        return json({
+          status: "ok",
+          sentryDsn: env.SENTRY_DSN || null,
+        });
+      }
+
+      // Serve static assets (widget.js, styles.css, index.html, robots.txt, vendor/*)
+      const assetResponse = await env.ASSETS.fetch(req);
+      if (assetResponse.ok) {
+        const newHeaders = new Headers(assetResponse.headers);
+        // Short cache for HTML/robots; long immutable cache for versioned JS/CSS
+        newHeaders.set("Cache-Control", assetCacheControl(p));
+        newHeaders.set("X-Content-Type-Options", "nosniff");
+
+        return new Response(assetResponse.body, {
+          status: assetResponse.status,
+          statusText: assetResponse.statusText,
+          headers: newHeaders,
+        });
+      }
+      return assetResponse;
+    },
   },
-};
+);

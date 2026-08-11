@@ -1,5 +1,13 @@
 # Local Wrangler secrets (copy to `.dev.vars` — never commit `.dev.vars`)
 # Production: npx wrangler secret put SEED_SECRET
+# Production: npx wrangler secret put SENTRY_DSN
 
 # Required to call POST /api/seed (fail-closed if missing)
 SEED_SECRET=change-me-local-only
+
+# Sentry (Cloudflare Workers project DSN) — enables Worker SDK + /api/monitoring tunnel allowlist
+# Create project as "Cloudflare Workers" in Sentry; same DSN is exposed to the widget via /api/health
+SENTRY_DSN=
+# Optional (CLI / docs only — not read by Worker runtime)
+# SENTRY_ORG=
+# SENTRY_PROJECT=

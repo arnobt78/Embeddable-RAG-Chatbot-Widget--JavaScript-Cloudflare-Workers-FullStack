@@ -5,12 +5,17 @@
 	"scripts": {
 		"build:css": "npx tailwindcss -i ./src/input.css -o ./public/styles.css --minify && cat ./src/widget-styles.css >> ./public/styles.css",
 		"deploy": "npm run build:css && wrangler deploy",
-		"dev": "npm run build:css && wrangler dev"
+		"dev": "npm run build:css && wrangler dev",
+		"vendor:sentry": "node -e \"const v=require('@sentry/browser/package.json').version; require('child_process').execSync('curl -fsSL https://browser.sentry-cdn.com/'+v+'/bundle.min.js -o public/vendor/sentry-browser.min.js',{stdio:'inherit'}); console.log('vendored @sentry/browser',v);\""
 	},
 	"devDependencies": {
+		"@sentry/browser": "^10.70.0",
 		"autoprefixer": "^10.4.23",
 		"postcss": "^8.5.6",
 		"tailwindcss": "^3.4.19",
 		"wrangler": "^4.56.0"
+	},
+	"dependencies": {
+		"@sentry/cloudflare": "^10.70.0"
 	}
 }

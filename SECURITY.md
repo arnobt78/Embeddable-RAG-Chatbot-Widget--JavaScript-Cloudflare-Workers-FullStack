@@ -31,6 +31,7 @@ This project is an embeddable Cloudflare Workers chatbot. Built-in controls incl
 - **`SEED_SECRET`** — fail-closed auth on `POST /api/seed` (Bearer or `X-Seed-Secret`)
 - **Chat rate limit** — Workers Rate Limiting binding `CHAT_LIMITER` (20 requests / IP / 60s), not KV counters
 - **`robots.txt`** — blocks common AI scrapers on the demo site
+- **Sentry (optional)** — `@sentry/cloudflare` when `SENTRY_DSN` is set; browser events use `POST /api/monitoring` tunnel allowlisted to that DSN only (not an open proxy)
 
 Areas still worth responsible review:
 

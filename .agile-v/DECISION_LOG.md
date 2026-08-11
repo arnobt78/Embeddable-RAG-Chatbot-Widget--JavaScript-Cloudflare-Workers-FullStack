@@ -90,3 +90,16 @@ Append-only.
 | Rationale | Agent Review race on concurrent chat; native binding is atomic per colo and fits abuse-prevention use case |
 | Linked | REQ-0012, RISK-0002 |
 | Status | Implemented |
+
+---
+
+## DEC-0008 — Sentry Workers SDK + `/api/monitoring` tunnel
+
+| Field | Value |
+|---|---|
+| Timestamp | 2026-08-11 |
+| Agent | Cursor / Build |
+| Decision | Add `@sentry/cloudflare` + optional `SENTRY_DSN`; tunnel browser envelopes via `POST /api/monitoring` with DSN allowlist; vendor `public/vendor/sentry-browser.min.js` (no Next.js Sentry guide copy-paste) |
+| Rationale | Demo needs model-down alerts; ad blockers break browser ingest; Workers stack ≠ `@sentry/nextjs` |
+| Linked | REQ-0016, REQ-0023 |
+| Status | Implemented |

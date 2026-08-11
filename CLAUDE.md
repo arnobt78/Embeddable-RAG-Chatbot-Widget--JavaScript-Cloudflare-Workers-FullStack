@@ -1,39 +1,28 @@
 # CLAUDE.md
 
 ## Project
-**ai-chatbot-widget** — Embeddable RAG FAQ chatbot on Cloudflare Workers (vanilla JS widget + Worker API).
+**ai-chatbot-widget** — Embeddable RAG FAQ chatbot (CF Workers + vanilla JS). Not Next/Vite/React.
 
 | Field | Value |
 |---|---|
 | Cycle | C1 |
-| Gate | GATE-0001 partial (models + guardrails + CHAT_LIMITER) |
+| Gate | GATE-0001 partial (models, guardrails, CHAT_LIMITER, Sentry) |
 | Resume | `.agile-v/STATE.md` |
 | Live | https://ai-chatbot-widget.arnobt78.workers.dev/ |
 
----
-
 ## Stack
-- **FE:** `public/widget.js` (zero deps), `public/index.html`, Tailwind → `styles.css`
-- **BE:** `src/index.js` (Worker)
-- **AI:** `CHAT_MODELS` = `@cf/meta/llama-3.1-8b-instruct-fast` → `@cf/zai-org/glm-4.7-flash`; `EMBED_MODEL` = `@cf/baai/bge-base-en-v1.5`
-- **Data:** KV `CHAT_SESSIONS`; Vectorize `faq-vectors` (768-d)
-- **Limit:** `CHAT_LIMITER` 20/60s (Rate Limiting binding)
-- **Secret:** `SEED_SECRET` (fail-closed `/api/seed`)
-
----
+- FE: `public/widget.js`, `index.html`, Tailwind→`styles.css`, `vendor/sentry-browser.min.js`
+- BE: `src/index.js` + `nodejs_compat`
+- AI: llama-3.1-8b-instruct-fast → glm-4.7-flash; embed bge-base-en-v1.5
+- Data: KV `CHAT_SESSIONS`; Vectorize `faq-vectors`
+- Limit: `CHAT_LIMITER` 20/60s
+- Secrets: `SEED_SECRET`; `SENTRY_DSN` (`@sentry/cloudflare` + `POST /api/monitoring`)
 
 ## Scripts
-`npm run dev` | `npm run deploy` | `npm run build:css`
-
----
+`npm run dev` | `deploy` | `build:css` | `vendor:sentry`
 
 ## Rules
-- Code is SoT. This is **not** Next.js/Vite/React.
-- Prefer extending Worker + widget; no parallel stacks.
-- Portable docs under `docs/` may describe other repos — reconcile before applying.
-- Never commit `.dev.vars`.
-
----
+Code is SoT. Prefer Workers patterns; ignore Next densify/Zod/Redis/Vite from portable docs unless adapted. Never commit `.dev.vars`.
 
 ## Validation
-Record in `.agile-v/VALIDATION_SUMMARY.md`. Resume from `.agile-v/STATE.md`.
+`.agile-v/VALIDATION_SUMMARY.md` · resume `.agile-v/STATE.md`

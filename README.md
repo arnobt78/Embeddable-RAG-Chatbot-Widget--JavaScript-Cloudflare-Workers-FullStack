@@ -174,6 +174,7 @@ cloudflare-chatbot-widget/
 ├── public/
 │   ├── index.html          # Demo / landing page that loads the widget
 │   ├── widget.js           # Embeddable chatbot (vanilla JS)
+│   ├── vendor/             # Self-hosted Sentry browser bundle (tunnel-friendly)
 │   └── styles.css          # Built CSS (generated — do not hand-edit as source of truth)
 ├── docs/
 │   ├── PROJECT_WALKTHROUGH.md  # Short learning path
@@ -320,6 +321,7 @@ curl -X POST https://YOUR-SUBDOMAIN.workers.dev/api/seed \
 |---|---|---|
 | `wrangler.jsonc` bindings | **Yes** | `AI`, `VECTORIZE`, `CHAT_SESSIONS`, `ASSETS`, `CHAT_LIMITER` |
 | `SEED_SECRET` (Wrangler secret / `.dev.vars`) | **Yes to call `/api/seed`** | Fail-closed seed lock (REQ-0011) |
+| `SENTRY_DSN` (Wrangler secret / `.dev.vars`) | **Optional** | Worker Sentry + `/api/monitoring` tunnel allowlist |
 | `.env` / `.env.local` | **No** | Not used by this Worker |
 | `CLOUDFLARE_API_TOKEN` | **Optional** | CI / non-interactive `wrangler deploy` |
 
@@ -344,6 +346,17 @@ Accepted headers:
 
 - `Authorization: Bearer <SEED_SECRET>`
 - `X-Seed-Secret: <SEED_SECRET>`
+
+### `SENTRY_DSN` (optional observability)
+
+Create a Sentry project as **Cloudflare Workers** (not Next.js/React). Then:
+
+```bash
+npx wrangler secret put SENTRY_DSN
+# local: add SENTRY_DSN=… to `.dev.vars` (see `.dev.vars.example`)
+```
+
+Enables `@sentry/cloudflare` on the Worker (model/RAG hard failures) and allowlists `POST /api/monitoring` (browser SDK tunnel past ad blockers). Refresh the vendored browser bundle with `npm run vendor:sentry`.
 
 ### Chat rate limit (built-in)
 
@@ -390,6 +403,7 @@ NEXT_PUBLIC_CHATBOT_URL=https://your-worker.workers.dev
 | `CHAT_LIMITER` | Rate Limiting (20 / 60s) | Abuse cap on `/api/chat` |
 | `ASSETS` | Static assets `./public` | `widget.js`, CSS, HTML, `robots.txt` |
 | `SEED_SECRET` | Secret (not a binding in jsonc) | Authorize `/api/seed` |
+| `SENTRY_DSN` | Secret (optional) | Sentry Worker SDK + monitoring tunnel allowlist |
 
 ---
 
@@ -477,12 +491,18 @@ Base URL = your Worker origin.
 
 ### `GET /api/health`
 
-Liveness check.
+Liveness check. When `SENTRY_DSN` is set, also returns the public client DSN for the widget.
 
 ```bash
 curl https://YOUR-SUBDOMAIN.workers.dev/api/health
-# { "status": "ok" }
+# { "status": "ok", "sentryDsn": "https://…@….ingest.sentry.io/…" }  # or sentryDsn: null
 ```
+
+---
+
+### `POST /api/monitoring`
+
+Sentry envelope tunnel (browser SDK). Same-origin / Worker-origin POST so ad blockers do not block `*.sentry.io`. Allowlists host + project from `SENTRY_DSN` only (not an open proxy).
 
 ---
 
@@ -752,6 +772,7 @@ Then redeploy + authenticated `POST /api/seed`.
 
 - `/api/seed` is **secret-gated** (`SEED_SECRET`) — fail-closed if unset.
 - `/api/chat` is **rate-limited** (20 req / IP / min via `CHAT_LIMITER`) to protect Workers AI Neurons.
+- `/api/monitoring` tunnels Sentry envelopes only for the configured `SENTRY_DSN` host/project (not auth; allowlist only).
 - `public/robots.txt` blocks common AI scrapers from the demo HTML.
 - CORS is wide open (`*`) by design for embeddability — consider an allowlist if you only support specific sites.
 - Session cookies use `HttpOnly; SameSite=Lax` — third-party embeds may need a different session strategy (`SameSite=None; Secure` or header-based session ids).

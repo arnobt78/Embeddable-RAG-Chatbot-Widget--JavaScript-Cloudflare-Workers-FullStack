@@ -49,10 +49,12 @@
       - CHATBOT_GREETING: Initial message shown when widget opens
       - CHATBOT_PLACEHOLDER: Text shown in the input field (optional, has default)
       - CHATBOT_BASE_URL: API endpoint URL (optional, defaults to current origin)
+      - CHATBOT_SENTRY_DSN: optional override; otherwise widget reads sentryDsn from /api/health
     -->
     <script>
       window.CHATBOT_TITLE = "Support Assistant";
       window.CHATBOT_GREETING = "Hi! 👋 How can I help you today?";
+      // Optional: window.CHATBOT_SENTRY_DSN = "https://…@….ingest.sentry.io/…";
     </script>
     <!-- Load the widget script - automatically initializes when DOM is ready -->
     <script src="/widget.js"></script>

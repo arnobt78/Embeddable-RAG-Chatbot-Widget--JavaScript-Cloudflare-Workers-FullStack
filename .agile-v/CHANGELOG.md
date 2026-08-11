@@ -1,5 +1,11 @@
 # Changelog — Cycle C1
 
+## 2026-08-11 — Sentry + monitoring tunnel (DEC-0008)
+
+- `@sentry/cloudflare` wrap; capture chat/RAG/seed hard failures when `SENTRY_DSN` set
+- `POST /api/monitoring` envelope proxy (DSN host/project allowlist)
+- Vendored browser SDK + widget tunnel init; `/api/health` exposes `sentryDsn`
+
 ## 2026-08-11 — Rate Limiting binding (DEC-0007)
 
 - Replaced racy KV chat counters with `CHAT_LIMITER` (`wrangler.jsonc` ratelimits 20/60)

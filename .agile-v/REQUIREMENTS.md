@@ -14,13 +14,15 @@ Status legend: `BASELINE` = already implemented in code | `CANDIDATE` = proposed
 | REQ-0004 | Sessions persist in KV for 30 days via `chatbot_session` cookie | `CHAT_SESSIONS` + TTL | BASELINE |
 | REQ-0005 | `GET /api/history` returns messages for current session cookie | history route | BASELINE |
 | REQ-0006 | `POST /api/seed` upserts hardcoded FAQ embeddings into Vectorize (secret-gated) | `seed()` + `assertSeedAuth` / `SEED_SECRET` | BASELINE |
-| REQ-0007 | `GET /api/health` returns `{ status: "ok" }` | health route | BASELINE |
+| REQ-0007 | `GET /api/health` returns `{ status: "ok", sentryDsn }` | health route | BASELINE |
 | REQ-0008 | Widget is zero-dependency vanilla JS, configurable via `window.CHATBOT_*` | `public/widget.js` | BASELINE |
 | REQ-0009 | Widget supports dark/light theme, mobile layout, streaming UI | `public/widget.js` | BASELINE |
 | REQ-0010 | CORS allows any origin for embed use | `Access-Control-Allow-Origin: *` | BASELINE |
 | REQ-0011 | Protect `/api/seed` with a shared secret; reject unauthenticated calls | `assertSeedAuth` fail-closed | BASELINE |
 | REQ-0012 | Rate-limit `/api/chat` via Workers Rate Limiting binding | `CHAT_LIMITER` + `assertChatRateLimit` 20/min | BASELINE |
+| REQ-0016 | Optional Sentry via `@sentry/cloudflare` + capture on chat/RAG/seed hard failures | `Sentry.withSentry` + `captureErr` when `SENTRY_DSN` set | BASELINE |
 | REQ-0022 | CF-native production guardrails (robots.txt AI scrapers + seed/chat controls) | `public/robots.txt` + REQ-0011/0012 | BASELINE (partial) |
+| REQ-0023 | Browser Sentry envelopes tunnel through `POST /api/monitoring` (DSN allowlist) | `monitoring()` + vendored browser SDK | BASELINE |
 
 ---
 
@@ -31,7 +33,6 @@ Status legend: `BASELINE` = already implemented in code | `CANDIDATE` = proposed
 | REQ-0013 | Add automated smoke tests for API routes (health, chat validation, seed auth) | Zero test coverage today | P1 | CANDIDATE |
 | REQ-0014 | Extract FAQ corpus from `seed()` into a data file; seed reads that source | Maintainability; 20 FAQs hardcoded in handler | P1 | CANDIDATE |
 | REQ-0015 | Improve third-party embed session reliability (cookie `SameSite` / alternate session id strategy) | Cross-site embeds may drop `SameSite=Lax` cookies | P1 | CANDIDATE |
-| REQ-0016 | Structured error logging (Workers observability / optional Sentry adapted for Workers — not Next.js copy-paste) | Silent `catch` in `faq()` hides RAG failures | P2 | CANDIDATE |
 | REQ-0017 | Optional analytics events for widget open / message sent (PostHog or CF Analytics — Workers-compatible) | Guide exists but targets Next.js | P2 | CANDIDATE |
 | REQ-0018 | Multi-model / provider fallback for chat (Workers AI primary; optional external fallback per LLM guide) | Single-model SPOF | P2 | CANDIDATE |
 | REQ-0019 | Adapt portable docs so they match this CF Workers stack (or mark as external references only) | Docs currently describe Next.js / Vercel / other repos | P1 | CANDIDATE |

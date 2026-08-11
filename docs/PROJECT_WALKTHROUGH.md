@@ -13,19 +13,21 @@ An **embeddable chat widget** (one script tag) backed by a **Cloudflare Worker**
 3. Streams answers via **Workers AI** (Llama 3.1 Fast → GLM-4.7-Flash fallback)
 4. Caps abuse with **Rate Limiting** (`CHAT_LIMITER`, 20/min/IP)
 5. Protects FAQ seeding with **`SEED_SECRET`**
+6. Optional **Sentry** (`SENTRY_DSN`) — Worker SDK + browser tunnel `POST /api/monitoring`
 
 ---
 
 ## Structure (mental map)
 
 ```text
-src/index.js          Worker: routes, RAG, chat, seed, assets
-public/widget.js      Browser widget (SSE client)
+src/index.js          Worker: routes, RAG, chat, seed, monitoring tunnel, assets
+public/widget.js      Browser widget (SSE client + optional Sentry via tunnel)
+public/vendor/        Self-hosted sentry-browser.min.js
 public/index.html     Demo page
 public/robots.txt     Block AI scrapers
 public/styles.css     Built CSS (from src/*.css)
 wrangler.jsonc        Bindings: AI, VECTORIZE, KV, ASSETS, CHAT_LIMITER
-.dev.vars.example     Template for SEED_SECRET (copy → .dev.vars)
+.dev.vars.example     Template for SEED_SECRET + SENTRY_DSN
 ```
 
 ---
@@ -46,12 +48,13 @@ widget.js  --POST /api/chat-->  Worker
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/health` | `{ status: "ok" }` |
+| GET | `/api/health` | `{ status, sentryDsn }` |
 | POST | `/api/chat` | SSE stream; rate-limited |
 | GET | `/api/history` | Messages for session cookie |
 | POST | `/api/seed` | Bearer / `X-Seed-Secret` required |
+| POST | `/api/monitoring` | Sentry envelope tunnel (DSN allowlist) |
 
-Static: `/`, `/widget.js`, `/styles.css`, `/robots.txt`
+Static: `/`, `/widget.js`, `/styles.css`, `/robots.txt`, `/vendor/sentry-browser.min.js`
 
 ---
 
@@ -62,6 +65,7 @@ Static: `/`, `/widget.js`, `/styles.css`, `/robots.txt`
 | `AI` / `VECTORIZE` / `CHAT_SESSIONS` / `ASSETS` | `wrangler.jsonc` | Core runtime |
 | `CHAT_LIMITER` | `wrangler.jsonc` → `ratelimits` | 20 req / 60s / IP |
 | `SEED_SECRET` | `.dev.vars` locally; dashboard Secret or `wrangler secret put` in prod | Authorize seed |
+| `SENTRY_DSN` | Optional secret | Worker Sentry + monitoring tunnel allowlist |
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -78,7 +82,8 @@ curl -X POST https://YOUR.workers.dev/api/seed \
 1. Run `npm run dev` → open local URL → ask an FAQ question  
 2. Change one FAQ in `seed()` → redeploy → re-seed  
 3. Swap/add a model in `CHAT_MODELS` at top of `src/index.js`  
-4. Embed elsewhere: set `window.CHATBOT_BASE_URL` then load `widget.js`
+4. Embed elsewhere: set `window.CHATBOT_BASE_URL` then load `widget.js`  
+5. Observability: set `SENTRY_DSN` → deploy → confirm `/api/health` has `sentryDsn` and Network shows `POST /api/monitoring`
 
 ---
 

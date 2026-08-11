@@ -24,6 +24,53 @@ const C={
   g:window.CHATBOT_GREETING||'👋 How can I help you today?' // Initial greeting
 };
 
+/**
+ * Optional Sentry browser SDK (self-hosted under /vendor) + tunnel to /api/monitoring.
+ * Loads async so the FAB still appears instantly. Skips when no DSN is available.
+ * DSN sources: window.CHATBOT_SENTRY_DSN, or GET /api/health → sentryDsn.
+ */
+function initSentry(){
+  try{
+    const tunnel=C.u.replace(/\/$/,'')+'/api/monitoring';
+    const boot=(dsn)=>{
+      if(!dsn||typeof dsn!=='string')return;
+      if(window.__cbSentryInit)return;
+      window.__cbSentryInit=1;
+      const s=document.createElement('script');
+      s.src=C.u.replace(/\/$/,'')+'/vendor/sentry-browser.min.js';
+      s.async=1;
+      s.onload=()=>{
+        try{
+          if(!window.Sentry||!window.Sentry.init)return;
+          window.Sentry.init({
+            dsn:dsn,
+            tunnel:tunnel,
+            tracesSampleRate:0, // errors only — keep embed lightweight
+            // Match Worker project; browser events still useful for widget crashes
+          });
+        }catch{}
+      };
+      document.head.appendChild(s);
+    };
+    if(window.CHATBOT_SENTRY_DSN){
+      boot(window.CHATBOT_SENTRY_DSN);
+      return;
+    }
+    fetch(C.u.replace(/\/$/,'')+'/api/health',{credentials:'omit'})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{if(d&&d.sentryDsn)boot(d.sentryDsn);})
+      .catch(()=>{});
+  }catch{}
+}
+
+function reportClientError(err,ctx){
+  try{
+    if(window.Sentry&&window.Sentry.captureException){
+      window.Sentry.captureException(err instanceof Error?err:new Error(String(err)),ctx?{extra:ctx}:undefined);
+    }
+  }catch{}
+}
+
 // State variables
 let open=0,      // Widget open/closed state (0=closed, 1=open)
     msgs=[],     // Message history array
@@ -63,6 +110,9 @@ if(!document.getElementById('cb-animations')){
  * even without Tailwind CSS or other frameworks.
  */
 function init(){
+  // Non-blocking observability — never delay FAB paint
+  initSentry();
+
   // Create button immediately - appears instantly (no waiting for CSS)
   const btn=document.createElement('button');
   btn.id='cb-btn';
@@ -529,8 +579,9 @@ async function send(e){
         }catch{}
       }
     }
-  }catch{
-    // Error handling: show error message
+  }catch(err){
+    // Error handling: show error message + optional Sentry (via tunnel)
+    reportClientError(err,{route:'/api/chat'});
     if(typingEl)typingEl.style.display='none';
     typing=0;
     add('assistant','Sorry, an error occurred.');
