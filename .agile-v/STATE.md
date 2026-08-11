@@ -3,53 +3,42 @@
 | Field | Value |
 |---|---|
 | Cycle | C1 |
-| Stage | 3 — Synthesis (partial) |
-| Gate | GATE-0001 partial — model fix + Workers guardrails approved via plans |
-| Status | Chat models + seed auth + chat rate limit + robots.txt implemented |
+| Stage | 3 — Synthesis |
+| Gate | GATE-0001 partial APPROVED (models, guardrails, CHAT_LIMITER) |
+| Status | DEC-0007 Rate Limiting fix in code; pending push for live binding |
 | Resume token | `C1-HG1-2026-08-11` |
-| Last updated | 2026-08-11 |
+| Updated | 2026-08-11 |
 
 ---
 
-## What this project is (verified)
+## Project
 
-Embeddable RAG FAQ chatbot widget on **Cloudflare Workers**:
+Workers RAG chatbot: `src/index.js` + `public/widget.js`. Live: `https://ai-chatbot-widget.arnobt78.workers.dev/`
 
-- Worker API + asset serving: `src/index.js`
-- Embeddable client: `public/widget.js` (vanilla JS, zero deps)
-- Demo page: `public/index.html` + `public/robots.txt`
-- Bindings: Workers AI, Vectorize (`faq-vectors`), KV (`CHAT_SESSIONS`), ASSETS
-- Secret: `SEED_SECRET` (fail-closed seed)
-- Models: `CHAT_MODELS` = llama-3.1-8b-instruct-fast → glm-4.7-flash; `EMBED_MODEL` = bge-base-en-v1.5
-- Guardrails: chat 20/min/IP; AI scrapers blocked in robots.txt
-
-Live: `https://ai-chatbot-widget.arnobt78.workers.dev/`
+- Models: llama-3.1-8b-instruct-fast → glm-4.7-flash; embed bge-base-en-v1.5
+- Bindings: AI, VECTORIZE, CHAT_SESSIONS, ASSETS, **CHAT_LIMITER**
+- Secret: SEED_SECRET (prod set); robots.txt AI-scraper blocks
 
 ---
 
-## Completed
+## Done
 
-- [x] Agile V bootstrap + analysis
-- [x] Workers AI model migrate + fallback (DEC-0004 / DEC-0005)
-- [x] REQ-0011 seed auth, REQ-0012 rate limit, REQ-0022 partial robots (DEC-0006)
-- [x] README / SECURITY / `.agile-v` sync
+- [x] Model migrate + fallback (DEC-0004/5)
+- [x] Seed auth, robots, initial rate limit (DEC-0006)
+- [x] CHAT_LIMITER replaces KV race (DEC-0007)
+- [x] Docs: CLAUDE compact, PROJECT_WALKTHROUGH, README/SECURITY sync
+- [x] Commit + push DEC-0007 + docs
 
 ---
 
 ## Remaining
 
-- [ ] `wrangler deploy` + `wrangler secret put SEED_SECRET` then smoke live APIs
-- [ ] Remaining candidates (tests, FAQ extract, session SameSite, etc.)
-- [ ] Stage 4 Red Team / Gate 2 for release
+- [ ] Confirm CF Deployments / Bindings show Rate Limit after push
+- [ ] Optional: smoke tests (REQ-0013), FAQ extract, SameSite session
+- [ ] Gate 2 / Red Team
 
 ---
 
-## Blockers
+## Next
 
-- Deploy/smoke needs user Cloudflare auth + production `SEED_SECRET`.
-
----
-
-## Next exact task
-
-User: set `SEED_SECRET`, deploy, verify `/robots.txt`, seed with Bearer, chat under/over rate limit.
+Verify production Binding `CHAT_LIMITER`; chat smoke; Agent Review race should be gone.

@@ -3,51 +3,27 @@
 | Field | Value |
 |---|---|
 | Cycle | C1 |
-| Last run | 2026-08-11 (Workers guardrails DEC-0006) |
-| Eval gate status | N/A (partial Gate 1; not Gate 2 release) |
+| Last run | 2026-08-11 (DEC-0007 Rate Limiting) |
+| Eval gate | N/A (pre Gate 2) |
 
-## Commands available (verified in package.json)
+## Scripts
 
-| Script | Purpose |
-|---|---|
-| `npm run build:css` | Tailwind + append widget styles → `public/styles.css` |
-| `npm run dev` | build:css + `wrangler dev` |
-| `npm run deploy` | build:css + `wrangler deploy` |
+`build:css` | `dev` | `deploy`
 
-## Missing validation tooling
-
-- No `typecheck` (JS only)
-- No `lint` script
-- No `test` script / test directory
-
-## Session validation
+## Checks
 
 | Check | Result | Notes |
 |---|---|---|
-| `node --check src/index.js` | PASS | Exit 0 |
-| `npm run build:css` | PASS | Exit 0 |
-| Seed auth helpers present | PASS | `assertSeedAuth`, `SEED_SECRET` |
-| Chat rate limit helpers present | PASS | `assertChatRateLimit`, 20/60s |
-| `public/robots.txt` present | PASS | AI scrapers Disallow |
-| Asset cache split HTML/robots vs JS/CSS | PASS | `assetCacheControl()` |
-| Static guardrails wiring check | PASS | `GUARDRAILS_OK` |
-| Live deploy smoke | PENDING | User: secret + deploy |
+| `node --check src/index.js` | PASS | |
+| Rate limit wiring | PASS | `CHAT_LIMITER.limit`; no `rl:chat:` KV |
+| `wrangler deploy --dry-run` | PASS | Shows `env.CHAT_LIMITER (20 requests/60s)` |
+| Seed auth | PASS (code) | fail-closed `SEED_SECRET` |
+| robots.txt | PASS | AI scrapers Disallow |
+| Live CHAT_LIMITER | PENDING | needs push/deploy |
 
-## VAL records
+## VAL
 
-| ID | Claim | Result | Evidence |
-|---|---|---|---|
-| VAL-0004 | Deprecated llama-3-8b-instruct removed | PASS | `CHAT_MODEL` fast variant |
-| VAL-0005 | Embedding model unchanged (768-d BGE) | PASS | `EMBED_MODEL` |
-| VAL-0008 | `/api/seed` fail-closed without secret | PASS (code) | `assertSeedAuth` → 503/401 |
-| VAL-0009 | `/api/chat` rate-limited | PASS (code) | KV `rl:chat:…` |
-| VAL-0010 | robots.txt blocks AI scrapers | PASS | `public/robots.txt` |
-
-## Manual curl checks (after deploy)
-
-```bash
-curl -sS https://YOUR/robots.txt | head
-curl -sS -X POST https://YOUR/api/seed   # expect 503 or 401
-curl -sS -X POST https://YOUR/api/seed -H "Authorization: Bearer $SEED_SECRET"
-# burst chat to verify 429
-```
+| ID | Claim | Result |
+|---|---|---|
+| VAL-0009 | Chat rate limit race fixed | PASS (code) — Rate Limiting binding |
+| VAL-0011 | Dry-run exposes CHAT_LIMITER | PASS |

@@ -28,5 +28,17 @@
 			"binding": "CHAT_SESSIONS",
 			"id": "0011b88d773744f899fa603aeaa94dac"
 		}
+	],
+	// Native Rate Limiting binding — atomic per colo (abuse prevention for /api/chat)
+	// namespace_id is an account-local integer we define (not a provisioned resource UUID)
+	"ratelimits": [
+		{
+			"name": "CHAT_LIMITER",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 20,
+				"period": 60
+			}
+		}
 	]
 }

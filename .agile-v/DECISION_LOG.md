@@ -73,7 +73,20 @@ Append-only.
 |---|---|
 | Timestamp | 2026-08-11 |
 | Agent | Cursor / Build |
-| Decision | Add `robots.txt` AI-scraper blocks; fail-closed `SEED_SECRET` on `/api/seed`; KV rate-limit `/api/chat` at 20/min/IP; do not implement Vercel/Next.js guardrails doc |
+| Decision | Add `robots.txt` AI-scraper blocks; fail-closed `SEED_SECRET` on `/api/seed`; initial KV rate-limit on `/api/chat`; do not implement Vercel/Next.js guardrails doc |
 | Rationale | Public Worker cost + open seed risk; CF-native patterns match this stack |
 | Linked | REQ-0011, REQ-0012, REQ-0022, RISK-0001, RISK-0002 |
+| Status | Implemented (rate limit upgraded in DEC-0007) |
+
+---
+
+## DEC-0007 — Replace KV chat rate limit with Rate Limiting binding
+
+| Field | Value |
+|---|---|
+| Timestamp | 2026-08-11 |
+| Agent | Cursor / Build |
+| Decision | Remove racy KV get/put counters; use `env.CHAT_LIMITER.limit({ key: ip })` with wrangler `ratelimits` 20/60 |
+| Rationale | Agent Review race on concurrent chat; native binding is atomic per colo and fits abuse-prevention use case |
+| Linked | REQ-0012, RISK-0002 |
 | Status | Implemented |

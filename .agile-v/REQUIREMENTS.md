@@ -19,7 +19,7 @@ Status legend: `BASELINE` = already implemented in code | `CANDIDATE` = proposed
 | REQ-0009 | Widget supports dark/light theme, mobile layout, streaming UI | `public/widget.js` | BASELINE |
 | REQ-0010 | CORS allows any origin for embed use | `Access-Control-Allow-Origin: *` | BASELINE |
 | REQ-0011 | Protect `/api/seed` with a shared secret; reject unauthenticated calls | `assertSeedAuth` fail-closed | BASELINE |
-| REQ-0012 | Rate-limit `/api/chat` (KV counter per IP) | `assertChatRateLimit` 20/min | BASELINE |
+| REQ-0012 | Rate-limit `/api/chat` via Workers Rate Limiting binding | `CHAT_LIMITER` + `assertChatRateLimit` 20/min | BASELINE |
 | REQ-0022 | CF-native production guardrails (robots.txt AI scrapers + seed/chat controls) | `public/robots.txt` + REQ-0011/0012 | BASELINE (partial) |
 
 ---

@@ -1,10 +1,16 @@
 # Changelog — Cycle C1
 
+## 2026-08-11 — Rate Limiting binding (DEC-0007)
+
+- Replaced racy KV chat counters with `CHAT_LIMITER` (`wrangler.jsonc` ratelimits 20/60)
+- `assertChatRateLimit` uses `env.CHAT_LIMITER.limit({ key: ip })`
+- seed() logs failures; SSE parse empty catch documented
+
 ## 2026-08-11 — Workers abuse / crawl guardrails (DEC-0006)
 
 - `public/robots.txt` blocks AI scrapers; short cache for HTML/robots
 - `/api/seed` fail-closed `SEED_SECRET` (Bearer / X-Seed-Secret)
-- `/api/chat` KV rate limit 20/min/IP
+- `/api/chat` KV rate limit 20/min/IP (later replaced by Rate Limiting binding in DEC-0007)
 - `.dev.vars.example`, README, SECURITY, Agile V updates
 
 ## 2026-08-11 — Workers AI chat fallback (DEC-0005)

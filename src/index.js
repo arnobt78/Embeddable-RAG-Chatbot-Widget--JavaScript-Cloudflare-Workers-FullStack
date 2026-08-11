@@ -25,8 +25,7 @@ const SYS = `You are a helpful customer support assistant. Be friendly, professi
 // TTL (Time To Live) for session storage: 30 days in seconds
 const TTL = 30 * 24 * 60 * 60;
 
-// Chat abuse cap: max requests per client IP per window (Workers Neurons / cost guard)
-const CHAT_RATE_LIMIT = 20;
+// Chat abuse cap: Rate Limiting binding window (seconds) — must match wrangler.jsonc period
 const CHAT_RATE_WINDOW_S = 60;
 
 // CORS headers - allows cross-origin requests from any domain
@@ -103,28 +102,28 @@ async function assertSeedAuth(req, env) {
 }
 
 /**
- * Fixed-window rate limit via KV (reuses CHAT_SESSIONS binding).
+ * Chat rate limit via Workers Rate Limiting binding (CHAT_LIMITER).
+ * Replaces racy KV get/put counters — limit() is atomic within a Cloudflare colo.
+ * Per-colo (not global billing accounting); suitable for abuse prevention on a public widget.
+ * Key = client IP (anonymous embed has no user id).
+ *
  * @param {Request} req
  * @param {Object} env
  * @returns {Promise<Response|null>} 429 Response when over limit, else null
  */
 async function assertChatRateLimit(req, env) {
-  const ip = clientIp(req);
-  const bucket = Math.floor(Date.now() / 1000 / CHAT_RATE_WINDOW_S);
-  const key = `rl:chat:${ip}:${bucket}`;
-  let count = parseInt((await env.CHAT_SESSIONS.get(key)) || "0", 10);
-  if (Number.isNaN(count)) count = 0;
-  if (count >= CHAT_RATE_LIMIT) {
-    const retry = CHAT_RATE_WINDOW_S - (Math.floor(Date.now() / 1000) % CHAT_RATE_WINDOW_S);
+  if (!env.CHAT_LIMITER) {
+    console.error("CHAT_LIMITER binding missing — check wrangler.jsonc ratelimits");
+    return json({ error: "Rate limiter not configured" }, 503);
+  }
+  const { success } = await env.CHAT_LIMITER.limit({ key: clientIp(req) });
+  if (!success) {
     return json(
-      { error: "Too many requests", retryAfter: retry },
+      { error: "Too many requests", retryAfter: CHAT_RATE_WINDOW_S },
       429,
-      { "Retry-After": String(retry) },
+      { "Retry-After": String(CHAT_RATE_WINDOW_S) },
     );
   }
-  await env.CHAT_SESSIONS.put(key, String(count + 1), {
-    expirationTtl: CHAT_RATE_WINDOW_S * 2,
-  });
   return null;
 }
 
@@ -286,7 +285,9 @@ async function chat(req, env) {
         if (ln.startsWith("data: ") && ln.slice(6) !== "[DONE]")
           try {
             full += JSON.parse(ln.slice(6)).response || "";
-          } catch {}
+          } catch {
+            // Intentional: skip malformed SSE data lines without aborting the stream
+          }
       ctrl.enqueue(chunk);
     },
     async flush() {
@@ -468,7 +469,8 @@ async function seed(req, env) {
     // This enables semantic search: similar questions will find relevant FAQs
     await env.VECTORIZE.upsert(vecs);
     return json({ success: true, count: faqs.length });
-  } catch {
+  } catch (err) {
+    console.error("seed() failed:", err);
     return json({ error: "Seed failed" }, 500);
   }
 }

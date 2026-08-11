@@ -29,7 +29,7 @@ You should receive an acknowledgement within a few business days. Once validated
 This project is an embeddable Cloudflare Workers chatbot. Built-in controls include:
 
 - **`SEED_SECRET`** — fail-closed auth on `POST /api/seed` (Bearer or `X-Seed-Secret`)
-- **Chat rate limit** — 20 requests / IP / minute on `POST /api/chat`
+- **Chat rate limit** — Workers Rate Limiting binding `CHAT_LIMITER` (20 requests / IP / 60s), not KV counters
 - **`robots.txt`** — blocks common AI scrapers on the demo site
 
 Areas still worth responsible review:

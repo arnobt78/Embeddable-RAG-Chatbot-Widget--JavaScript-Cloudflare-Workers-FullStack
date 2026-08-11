@@ -7,6 +7,7 @@
 [![Vectorize](https://img.shields.io/badge/Vectorize-RAG-0EA5E9)](https://developers.cloudflare.com/vectorize/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Wrangler](https://img.shields.io/badge/Wrangler-4.x-black)](https://developers.cloudflare.com/workers/wrangler/)
+[![Rate Limit](https://img.shields.io/badge/Rate%20Limit-20%2Fmin-red)](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
 [![Launch with Diploi](https://diploi.com/launch.svg)](https://diploi.com/launch/arnobt78/Embeddable-AI-Chatbot-Widget--JavaScript-Cloudflare-Workers-FullStack)
 
 A production-ready, embeddable AI chatbot widget powered by Cloudflare Workers, featuring RAG (Retrieval Augmented Generation), real-time streaming responses, and a zero-dependency client-side script.
@@ -14,6 +15,7 @@ A production-ready, embeddable AI chatbot widget powered by Cloudflare Workers, 
 - **Live Demo:** [https://ai-chatbot-widget.arnobt78.workers.dev/](https://ai-chatbot-widget.arnobt78.workers.dev/)
 - **Production Live:** [https://www.arnobmahmud.com/](https://www.arnobmahmud.com/)
 - **Security:** See [SECURITY.md](./SECURITY.md) for private vulnerability reporting
+- **Walkthrough:** [docs/PROJECT_WALKTHROUGH.md](./docs/PROJECT_WALKTHROUGH.md) — short learning path
 - **Author:** [Arnob Mahmud](https://www.arnobmahmud.com/) | LinkedIn: [https://www.linkedin.com/in/arnob-mahmud-05839655/](https://www.linkedin.com/in/arnob-mahmud-05839655/) | Contact: [contact@arnobmahmud.com](mailto:contact@arnobmahmud.com)
 
 ![Screenshot 2026-01-25 at 15 10 10](https://github.com/user-attachments/assets/62c0b8eb-0d6c-416f-b6df-cc223b816a6e)
@@ -48,6 +50,8 @@ A production-ready, embeddable AI chatbot widget powered by Cloudflare Workers, 
 - [License](#license)
 - [Happy Coding!](#happy-coding-)
 
+> Prefer a shorter tour first? Start with [docs/PROJECT_WALKTHROUGH.md](./docs/PROJECT_WALKTHROUGH.md).
+
 ---
 
 ## Overview
@@ -69,7 +73,7 @@ You do **not** need Next.js, React, Express, or a traditional database to run th
 1. How an **embeddable widget** works with one `<script>` tag
 2. How **RAG** combines embeddings + a vector index + an LLM
 3. How **SSE streaming** makes answers appear token-by-token
-4. How **Workers bindings** (`AI`, `VECTORIZE`, `CHAT_SESSIONS`, `ASSETS`) replace classic `.env` API wiring for many Cloudflare features
+4. How **Workers bindings** (`AI`, `VECTORIZE`, `CHAT_SESSIONS`, `ASSETS`, `CHAT_LIMITER`) replace classic `.env` API wiring for many Cloudflare features
 5. How a **model fallback chain** keeps chat alive if the primary model fails
 
 ---
@@ -80,7 +84,7 @@ You do **not** need Next.js, React, Express, or a traditional database to run th
 | ---------------- | ------------------------------------------------------------------------------------------------- |
 | **Beginner**     | Embed the widget, run `npm run dev`, call `/api/health`, read the demo page                       |
 | **Intermediate** | Trace `chat()` → `faq()` → `runChatStream()`, edit FAQs in `seed()`, change `CHAT_MODELS`         |
-| **Advanced**     | Change Vectorize metadata shape, reuse RAG helpers, tune `CHAT_RATE_LIMIT` |
+| **Advanced**     | Change Vectorize metadata shape, reuse RAG helpers, tune `CHAT_LIMITER` in wrangler.jsonc |
 
 ---
 
@@ -172,12 +176,13 @@ cloudflare-chatbot-widget/
 │   ├── widget.js           # Embeddable chatbot (vanilla JS)
 │   └── styles.css          # Built CSS (generated — do not hand-edit as source of truth)
 ├── docs/
+│   ├── PROJECT_WALKTHROUGH.md  # Short learning path
 │   ├── AGILE_V_PROTOCOL.md
 │   ├── LLM_MODEL_SELECTION.md
 │   ├── Redis_Sentry_PostHog_INTEGRATION_GUIDE.md   # portable guide (not wired here)
 │   └── VERCEL_PRODUCTION_GUARDRAILS.md             # portable guide (not wired here)
 ├── .agile-v/               # Agile V project memory (agents / process)
-├── wrangler.jsonc          # Worker name, bindings (AI, Vectorize, KV, ASSETS)
+├── wrangler.jsonc          # Bindings: AI, Vectorize, KV, ASSETS, CHAT_LIMITER
 ├── tailwind.config.js
 ├── package.json
 ├── LICENSE
@@ -313,7 +318,7 @@ curl -X POST https://YOUR-SUBDOMAIN.workers.dev/api/seed \
 
 | Mechanism | Required? | Purpose |
 |---|---|---|
-| `wrangler.jsonc` bindings | **Yes** | `AI`, `VECTORIZE`, `CHAT_SESSIONS`, `ASSETS` |
+| `wrangler.jsonc` bindings | **Yes** | `AI`, `VECTORIZE`, `CHAT_SESSIONS`, `ASSETS`, `CHAT_LIMITER` |
 | `SEED_SECRET` (Wrangler secret / `.dev.vars`) | **Yes to call `/api/seed`** | Fail-closed seed lock (REQ-0011) |
 | `.env` / `.env.local` | **No** | Not used by this Worker |
 | `CLOUDFLARE_API_TOKEN` | **Optional** | CI / non-interactive `wrangler deploy` |
@@ -342,7 +347,7 @@ Accepted headers:
 
 ### Chat rate limit (built-in)
 
-`POST /api/chat` is limited to **20 requests per IP per 60 seconds** (KV counters on `CHAT_SESSIONS`). Over limit → **429** with `Retry-After`.
+`POST /api/chat` is limited to **20 requests per IP per 60 seconds** via the Workers **Rate Limiting** binding (`CHAT_LIMITER` in `wrangler.jsonc`). This avoids racy KV counters. Over limit → **429** with `Retry-After: 60`. Limits are enforced per Cloudflare colo (abuse prevention, not global billing accounting).
 
 ### robots.txt (AI scrapers)
 
@@ -381,7 +386,8 @@ NEXT_PUBLIC_CHATBOT_URL=https://your-worker.workers.dev
 |---|---|---|
 | `AI` | Workers AI | Chat + embeddings |
 | `VECTORIZE` | Vectorize index `faq-vectors` | RAG search / upsert |
-| `CHAT_SESSIONS` | KV namespace | Session JSON + chat rate-limit counters |
+| `CHAT_SESSIONS` | KV namespace | Session JSON |
+| `CHAT_LIMITER` | Rate Limiting (20 / 60s) | Abuse cap on `/api/chat` |
 | `ASSETS` | Static assets `./public` | `widget.js`, CSS, HTML, `robots.txt` |
 | `SEED_SECRET` | Secret (not a binding in jsonc) | Authorize `/api/seed` |
 
@@ -557,8 +563,8 @@ const CHAT_MODEL_FALLBACK = "@cf/zai-org/glm-4.7-flash";
 const CHAT_MODELS = [CHAT_MODEL, CHAT_MODEL_FALLBACK];
 const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 const TTL = 30 * 24 * 60 * 60; // session cookie + KV TTL (seconds)
-const CHAT_RATE_LIMIT = 20; // per IP per window
-const CHAT_RATE_WINDOW_S = 60;
+const CHAT_RATE_WINDOW_S = 60; // matches wrangler CHAT_LIMITER period
+// Limit value (20) lives in wrangler.jsonc → ratelimits.CHAT_LIMITER
 ```
 
 ### `runChatStream(env, messages)`
@@ -745,7 +751,7 @@ Then redeploy + authenticated `POST /api/seed`.
 ## Security Notes
 
 - `/api/seed` is **secret-gated** (`SEED_SECRET`) — fail-closed if unset.
-- `/api/chat` is **rate-limited** (20 req / IP / min) to protect Workers AI Neurons.
+- `/api/chat` is **rate-limited** (20 req / IP / min via `CHAT_LIMITER`) to protect Workers AI Neurons.
 - `public/robots.txt` blocks common AI scrapers from the demo HTML.
 - CORS is wide open (`*`) by design for embeddability — consider an allowlist if you only support specific sites.
 - Session cookies use `HttpOnly; SameSite=Lax` — third-party embeds may need a different session strategy (`SameSite=None; Secure` or header-based session ids).
@@ -758,6 +764,7 @@ Then redeploy + authenticated `POST /api/seed`.
 | Doc | Purpose |
 |---|---|
 | [SECURITY.md](./SECURITY.md) | Private vulnerability reporting |
+| [docs/PROJECT_WALKTHROUGH.md](./docs/PROJECT_WALKTHROUGH.md) | Short educational walkthrough |
 | [docs/LLM_MODEL_SELECTION.md](./docs/LLM_MODEL_SELECTION.md) | Free-tier model reference + **this repo’s** Workers AI IDs |
 | [docs/AGILE_V_PROTOCOL.md](./docs/AGILE_V_PROTOCOL.md) | Agent / quality workflow |
 | [docs/VERCEL_PRODUCTION_GUARDRAILS.md](./docs/VERCEL_PRODUCTION_GUARDRAILS.md) | **External reference only** (Next.js/Vercel) — not applied here; use Workers patterns above |
