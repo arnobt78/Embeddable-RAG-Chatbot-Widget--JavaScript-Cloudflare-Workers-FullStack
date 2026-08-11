@@ -1,0 +1,5 @@
+# Local Wrangler secrets (copy to `.dev.vars` — never commit `.dev.vars`)
+# Production: npx wrangler secret put SEED_SECRET
+
+# Required to call POST /api/seed (fail-closed if missing)
+SEED_SECRET=change-me-local-only

@@ -5,15 +5,29 @@
  * It handles:
  * - RAG (Retrieval Augmented Generation) using Vectorize for FAQ search
  * - Session management via KV storage
- * - Streaming AI responses using Workers AI (Llama 3)
+ * - Streaming AI responses using Workers AI (free-plan chat + embedding models)
  * - Static asset serving with aggressive caching
  */
+
+// Workers AI model IDs (centralized — swap here only when Cloudflare catalog changes)
+// Chat: @cf/meta/llama-3-8b-instruct was deprecated 2026-05-30; -fast variant remains active on free plan
+const CHAT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
+// Free-plan fallback if primary fails (capacity / 403 / transient) — still Workers AI only, no external keys
+const CHAT_MODEL_FALLBACK = "@cf/zai-org/glm-4.7-flash";
+// Tried in order until env.AI.run(stream) succeeds
+const CHAT_MODELS = [CHAT_MODEL, CHAT_MODEL_FALLBACK];
+// Embeddings: 768-d BGE — keep stable so Vectorize index dimensions stay compatible
+const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
 
 // System prompt for the AI model - defines the assistant's behavior
 const SYS = `You are a helpful customer support assistant. Be friendly, professional, and concise. Use the FAQ context to give accurate answers. If you don't know something, say so.`;
 
 // TTL (Time To Live) for session storage: 30 days in seconds
 const TTL = 30 * 24 * 60 * 60;
+
+// Chat abuse cap: max requests per client IP per window (Workers Neurons / cost guard)
+const CHAT_RATE_LIMIT = 20;
+const CHAT_RATE_WINDOW_S = 60;
 
 // CORS headers - allows cross-origin requests from any domain
 const cors = { "Access-Control-Allow-Origin": "*" };
@@ -30,6 +44,133 @@ const cookie = (r) =>
   r.headers.get("Cookie")?.match(/chatbot_session=([^;]+)/)?.[1];
 
 /**
+ * Client IP for rate limiting (Cloudflare sets CF-Connecting-IP on the edge).
+ * @param {Request} req
+ * @returns {string}
+ */
+function clientIp(req) {
+  return req.headers.get("CF-Connecting-IP") || "0.0.0.0";
+}
+
+/**
+ * Timing-safe-ish string equality via SHA-256 digests (Workers-compatible).
+ * @param {string} a
+ * @param {string} b
+ * @returns {Promise<boolean>}
+ */
+async function secretsEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b)),
+  ]);
+  const ua = new Uint8Array(ha);
+  const ub = new Uint8Array(hb);
+  if (ua.length !== ub.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ua.length; i++) diff |= ua[i] ^ ub[i];
+  return diff === 0;
+}
+
+/**
+ * Extract seed token from Authorization: Bearer … or X-Seed-Secret.
+ * @param {Request} req
+ * @returns {string}
+ */
+function seedTokenFrom(req) {
+  const auth = req.headers.get("Authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m?.[1]) return m[1].trim();
+  return (req.headers.get("X-Seed-Secret") || "").trim();
+}
+
+/**
+ * Fail-closed auth for POST /api/seed (REQ-0011).
+ * @param {Request} req
+ * @param {Object} env
+ * @returns {Promise<Response|null>} Error Response, or null if authorized
+ */
+async function assertSeedAuth(req, env) {
+  if (!env.SEED_SECRET) {
+    return json({ error: "Seed not configured" }, 503);
+  }
+  const token = seedTokenFrom(req);
+  if (!token || !(await secretsEqual(token, env.SEED_SECRET))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  return null;
+}
+
+/**
+ * Fixed-window rate limit via KV (reuses CHAT_SESSIONS binding).
+ * @param {Request} req
+ * @param {Object} env
+ * @returns {Promise<Response|null>} 429 Response when over limit, else null
+ */
+async function assertChatRateLimit(req, env) {
+  const ip = clientIp(req);
+  const bucket = Math.floor(Date.now() / 1000 / CHAT_RATE_WINDOW_S);
+  const key = `rl:chat:${ip}:${bucket}`;
+  let count = parseInt((await env.CHAT_SESSIONS.get(key)) || "0", 10);
+  if (Number.isNaN(count)) count = 0;
+  if (count >= CHAT_RATE_LIMIT) {
+    const retry = CHAT_RATE_WINDOW_S - (Math.floor(Date.now() / 1000) % CHAT_RATE_WINDOW_S);
+    return json(
+      { error: "Too many requests", retryAfter: retry },
+      429,
+      { "Retry-After": String(retry) },
+    );
+  }
+  await env.CHAT_SESSIONS.put(key, String(count + 1), {
+    expirationTtl: CHAT_RATE_WINDOW_S * 2,
+  });
+  return null;
+}
+
+/**
+ * Cache-Control for static assets: short TTL for HTML/robots; long for JS/CSS.
+ * @param {string} pathname
+ * @returns {string}
+ */
+function assetCacheControl(pathname) {
+  if (
+    pathname === "/" ||
+    pathname === "/index.html" ||
+    pathname === "/robots.txt"
+  ) {
+    return "public, max-age=3600";
+  }
+  return "public, max-age=31536000, immutable";
+}
+
+/**
+ * Start a streaming Workers AI chat completion, trying CHAT_MODELS in order.
+ * Falls over immediately on run() failure (model down / capacity / paid-only / etc.).
+ * Mid-stream errors cannot switch models after bytes are already sent to the client.
+ *
+ * @param {Object} env - Cloudflare environment bindings (AI)
+ * @param {Array<{role: string, content: string}>} messages - Chat messages for the model
+ * @returns {Promise<ReadableStream>} - SSE stream from the first model that starts successfully
+ */
+async function runChatStream(env, messages) {
+  let lastErr;
+  for (const model of CHAT_MODELS) {
+    try {
+      const stream = await env.AI.run(model, { messages, stream: true });
+      if (model !== CHAT_MODELS[0]) {
+        console.warn("CHAT_MODEL primary failed; using fallback:", model);
+      }
+      return stream;
+    } catch (err) {
+      lastErr = err;
+      console.error("Workers AI chat failed for model", model, err);
+    }
+  }
+  throw lastErr || new Error("All CHAT_MODELS failed");
+}
+
+/**
  * RAG (Retrieval Augmented Generation) function
  * 
  * This function implements the RAG pattern:
@@ -43,8 +184,8 @@ const cookie = (r) =>
  */
 async function faq(env, q) {
   try {
-    // Generate embedding vector for the question using BGE model
-    const e = await env.AI.run("@cf/baai/bge-base-en-v1.5", { text: [q] });
+    // Generate embedding vector for the question using BGE model (EMBED_MODEL)
+    const e = await env.AI.run(EMBED_MODEL, { text: [q] });
     if (!e.data) return "";
     
     // Query Vectorize index for similar vectors (semantic search)
@@ -58,7 +199,9 @@ async function faq(env, q) {
     return r.matches
       .map((m) => `Q: ${m.metadata?.question}\nA: ${m.metadata?.answer}`)
       .join("\n\n");
-  } catch {
+  } catch (err) {
+    // Log for Workers Observability; degrade gracefully so chat still streams without FAQ context
+    console.error("RAG faq() failed:", err);
     return "";
   }
 }
@@ -70,7 +213,7 @@ async function faq(env, q) {
  * 1. Validates request and extracts message
  * 2. Manages session (creates new or retrieves existing from KV)
  * 3. Retrieves relevant FAQ context using RAG
- * 4. Streams AI response using Workers AI (Llama 3)
+ * 4. Streams AI response using Workers AI (CHAT_MODELS with instant fallback)
  * 5. Saves conversation history to KV storage
  * 
  * Uses Server-Sent Events (SSE) for real-time streaming responses.
@@ -82,6 +225,11 @@ async function faq(env, q) {
 async function chat(req, env) {
   if (req.method !== "POST")
     return new Response("Method not allowed", { status: 405 });
+
+  // Cap abuse / Workers AI cost (REQ-0012) before parsing body
+  const limited = await assertChatRateLimit(req, env);
+  if (limited) return limited;
+
   const { message } = await req.json();
   if (!message?.trim()) return json({ error: "Message required" }, 400);
 
@@ -120,11 +268,14 @@ async function chat(req, env) {
       .map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  // Stream AI response using Workers AI (Llama 3 model)
-  const stream = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
-    messages: msgs,
-    stream: true,
-  });
+  // Stream via primary chat model; on failure immediately try fallback (Workers AI only)
+  let stream;
+  try {
+    stream = await runChatStream(env, msgs);
+  } catch (err) {
+    console.error("All chat models failed:", err);
+    return json({ error: "AI temporarily unavailable" }, 503);
+  }
   
   // Transform stream to accumulate full response while streaming
   let full = "";
@@ -188,6 +339,10 @@ async function chat(req, env) {
 async function seed(req, env) {
   if (req.method !== "POST")
     return new Response("Method not allowed", { status: 405 });
+
+  // Fail-closed shared secret (REQ-0011) — set via wrangler secret / .dev.vars
+  const denied = await assertSeedAuth(req, env);
+  if (denied) return denied;
   
   // FAQ dataset: Array of [question, answer] pairs
   // Organized by topic for maintainability
@@ -298,12 +453,12 @@ async function seed(req, env) {
     const vecs = await Promise.all(
       faqs.map(async ([q, a], i) => {
         // Generate embedding from question + answer (combined for better context)
-        const e = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
+        const e = await env.AI.run(EMBED_MODEL, {
           text: [q + " " + a],
         });
         return {
           id: `faq-${i + 1}`,
-          values: e.data?.[0] || [], // Embedding vector (768 dimensions for BGE model)
+          values: e.data?.[0] || [], // Embedding vector (768 dimensions for BGE / EMBED_MODEL)
           metadata: { question: q, answer: a }, // Stored alongside vector for retrieval
         };
       }),
@@ -339,7 +494,8 @@ export default {
         headers: {
           ...cors,
           "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Headers":
+            "Content-Type, Authorization, X-Seed-Secret",
         },
       });
     
@@ -362,20 +518,14 @@ export default {
     // Health check endpoint
     if (p === "/api/health") return json({ status: "ok" });
     
-    // Serve static assets (widget.js, styles.css, index.html) with aggressive caching
-    // This improves performance: assets are cached for 1 year by browsers/CDN
+    // Serve static assets (widget.js, styles.css, index.html, robots.txt)
     const assetResponse = await env.ASSETS.fetch(req);
     if (assetResponse.ok) {
-      // Clone response to modify headers
       const newHeaders = new Headers(assetResponse.headers);
-      
-      // Add aggressive caching for static assets
-      // Cache for 1 year (31536000 seconds) - assets are versioned by deployment
-      // "immutable" tells browsers the file will never change, enabling long-term caching
-      newHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+      // Short cache for HTML/robots; long immutable cache for versioned JS/CSS
+      newHeaders.set("Cache-Control", assetCacheControl(p));
       newHeaders.set("X-Content-Type-Options", "nosniff");
       
-      // Return response with new headers
       return new Response(assetResponse.body, {
         status: assetResponse.status,
         statusText: assetResponse.statusText,
