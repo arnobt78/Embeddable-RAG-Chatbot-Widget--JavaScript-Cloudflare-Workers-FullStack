@@ -25,7 +25,8 @@ const C={
 };
 
 /**
- * Optional Sentry browser SDK (self-hosted under /vendor) + tunnel to /api/monitoring.
+ * Optional observability SDK (self-hosted `/vendor/cb-obs.min.js`) + tunnel to /api/monitoring.
+ * Filename avoids "sentry" so ad blockers do not ERR_BLOCKED_BY_CLIENT the script.
  * Loads async so the FAB still appears instantly. Skips when no DSN is available.
  * DSN sources: window.CHATBOT_SENTRY_DSN, or GET /api/health → sentryDsn.
  */
@@ -37,7 +38,7 @@ function initSentry(){
       if(window.__cbSentryInit)return;
       window.__cbSentryInit=1;
       const s=document.createElement('script');
-      s.src=C.u.replace(/\/$/,'')+'/vendor/sentry-browser.min.js';
+      s.src=C.u.replace(/\/$/,'')+'/vendor/cb-obs.min.js';
       s.async=1;
       s.onload=()=>{
         try{

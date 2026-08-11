@@ -174,7 +174,7 @@ cloudflare-chatbot-widget/
 ├── public/
 │   ├── index.html          # Demo / landing page that loads the widget
 │   ├── widget.js           # Embeddable chatbot (vanilla JS)
-│   ├── vendor/             # Self-hosted Sentry browser bundle (tunnel-friendly)
+│   ├── vendor/             # Self-hosted obs SDK (`cb-obs.min.js`; tunnel-friendly name)
 │   └── styles.css          # Built CSS (generated — do not hand-edit as source of truth)
 ├── docs/
 │   ├── PROJECT_WALKTHROUGH.md  # Short learning path
@@ -356,7 +356,7 @@ npx wrangler secret put SENTRY_DSN
 # local: add SENTRY_DSN=… to `.dev.vars` (see `.dev.vars.example`)
 ```
 
-Enables `@sentry/cloudflare` on the Worker (model/RAG hard failures) and allowlists `POST /api/monitoring` (browser SDK tunnel past ad blockers). Refresh the vendored browser bundle with `npm run vendor:sentry`.
+Enables `@sentry/cloudflare` on the Worker (model/RAG hard failures) and allowlists `POST /api/monitoring` (browser SDK tunnel past ad blockers). Browser bundle is served as `/vendor/cb-obs.min.js` (neutral filename — `*sentry*` paths get `ERR_BLOCKED_BY_CLIENT`). Refresh with `npm run vendor:sentry`.
 
 ### Chat rate limit (built-in)
 

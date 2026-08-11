@@ -22,7 +22,7 @@ An **embeddable chat widget** (one script tag) backed by a **Cloudflare Worker**
 ```text
 src/index.js          Worker: routes, RAG, chat, seed, monitoring tunnel, assets
 public/widget.js      Browser widget (SSE client + optional Sentry via tunnel)
-public/vendor/        Self-hosted sentry-browser.min.js
+public/vendor/        Self-hosted cb-obs.min.js (Sentry browser SDK; neutral name vs adblock)
 public/index.html     Demo page
 public/robots.txt     Block AI scrapers
 public/styles.css     Built CSS (from src/*.css)
@@ -54,7 +54,7 @@ widget.js  --POST /api/chat-->  Worker
 | POST | `/api/seed` | Bearer / `X-Seed-Secret` required |
 | POST | `/api/monitoring` | Sentry envelope tunnel (DSN allowlist) |
 
-Static: `/`, `/widget.js`, `/styles.css`, `/robots.txt`, `/vendor/sentry-browser.min.js`
+Static: `/`, `/widget.js`, `/styles.css`, `/robots.txt`, `/vendor/cb-obs.min.js`
 
 ---
 

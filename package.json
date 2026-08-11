@@ -6,7 +6,7 @@
 		"build:css": "npx tailwindcss -i ./src/input.css -o ./public/styles.css --minify && cat ./src/widget-styles.css >> ./public/styles.css",
 		"deploy": "npm run build:css && wrangler deploy",
 		"dev": "npm run build:css && wrangler dev",
-		"vendor:sentry": "node -e \"const v=require('@sentry/browser/package.json').version; require('child_process').execSync('curl -fsSL https://browser.sentry-cdn.com/'+v+'/bundle.min.js -o public/vendor/sentry-browser.min.js',{stdio:'inherit'}); console.log('vendored @sentry/browser',v);\""
+		"vendor:sentry": "node -e \"const v=require('@sentry/browser/package.json').version; require('child_process').execSync('curl -fsSL https://browser.sentry-cdn.com/'+v+'/bundle.min.js -o public/vendor/cb-obs.min.js',{stdio:'inherit'}); console.log('vendored @sentry/browser',v,'-> public/vendor/cb-obs.min.js');\""
 	},
 	"devDependencies": {
 		"@sentry/browser": "^10.70.0",

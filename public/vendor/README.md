@@ -1,9 +1,9 @@
 # Vendored browser assets
 
-`sentry-browser.min.js` — official Sentry Browser SDK IIFE (`bundle.min.js`), served same-origin so ad blockers are less likely to strip the script. Refresh with:
+`cb-obs.min.js` — official Sentry Browser SDK IIFE (`bundle.min.js`), renamed so ad blockers do not match a `*sentry*` URL filter. Served same-origin; envelopes go through `POST /api/monitoring`.
+
+Refresh:
 
 ```bash
 npm run vendor:sentry
 ```
-
-Do not load `browser.sentry-cdn.com` from the widget; envelopes go through `POST /api/monitoring`.

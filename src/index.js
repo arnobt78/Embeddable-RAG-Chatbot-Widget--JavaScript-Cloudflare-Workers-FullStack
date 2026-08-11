@@ -590,7 +590,7 @@ async function seed(req, env) {
  * Entry point wrapped with Sentry.withSentry (enabled when env.SENTRY_DSN is set).
  * Routes:
  * - API: /api/chat, /api/history, /api/seed, /api/health, /api/monitoring
- * - Static assets: widget.js, styles.css, vendor/sentry-browser.min.js, index.html
+ * - Static assets: widget.js, styles.css, vendor/cb-obs.min.js, index.html
  *
  * @param {Request} req - HTTP request
  * @param {Object} env - Cloudflare environment bindings (KV, Vectorize, AI, ASSETS, CHAT_LIMITER)

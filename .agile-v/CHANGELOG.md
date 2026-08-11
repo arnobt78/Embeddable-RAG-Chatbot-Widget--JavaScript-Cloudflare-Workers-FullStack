@@ -1,5 +1,9 @@
 # Changelog — Cycle C1
 
+## 2026-08-11 — Sentry vendor rename (adblock)
+
+- Renamed `public/vendor/sentry-browser.min.js` → `cb-obs.min.js` (`ERR_BLOCKED_BY_CLIENT` on `*sentry*` URLs)
+
 ## 2026-08-11 — Sentry + monitoring tunnel (DEC-0008)
 
 - `@sentry/cloudflare` wrap; capture chat/RAG/seed hard failures when `SENTRY_DSN` set

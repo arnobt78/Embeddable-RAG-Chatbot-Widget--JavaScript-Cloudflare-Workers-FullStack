@@ -11,7 +11,7 @@
 | Live | https://ai-chatbot-widget.arnobt78.workers.dev/ |
 
 ## Stack
-- FE: `public/widget.js`, `index.html`, Tailwind→`styles.css`, `vendor/sentry-browser.min.js`
+- FE: `public/widget.js`, `index.html`, Tailwind→`styles.css`, `vendor/cb-obs.min.js`
 - BE: `src/index.js` + `nodejs_compat`
 - AI: llama-3.1-8b-instruct-fast → glm-4.7-flash; embed bge-base-en-v1.5
 - Data: KV `CHAT_SESSIONS`; Vectorize `faq-vectors`
