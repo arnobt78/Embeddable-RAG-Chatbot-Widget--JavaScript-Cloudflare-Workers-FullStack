@@ -5,7 +5,7 @@
 | Cycle | C1 |
 | Stage | 3 — Synthesis |
 | Gate | GATE-0001 partial (models, guardrails, CHAT_LIMITER, Sentry) |
-| Status | DEC-0008 committed; confirm Sentry after CF deploy |
+| Status | DEC-0008 live; tunnel verified (`monitoring` 200 + captureMessage) |
 | Resume | `C1-HG1-2026-08-11` |
 | Updated | 2026-08-11 |
 
@@ -15,14 +15,13 @@ Workers RAG chatbot · Live: https://ai-chatbot-widget.arnobt78.workers.dev/
 ## Done
 - [x] DEC-0004/5 models + fallback
 - [x] DEC-0006/7 seed auth, robots, CHAT_LIMITER
-- [x] DEC-0008 Sentry + `/api/monitoring` + vendored browser SDK
-- [x] CF secret `SENTRY_DSN` + local `.dev.vars`
-- [x] Commit + push DEC-0008
+- [x] DEC-0008 Sentry + tunnel; `cb-obs.min.js` adblock rename
+- [x] CF secrets `SEED_SECRET` + `SENTRY_DSN`; deploy verified
 
-## Remaining
-- [ ] Smoke after deploy: `/api/health` → `sentryDsn`; Network `POST /api/monitoring`
-- [ ] Optional: REQ-0013 smoke tests, FAQ extract, SameSite
+## Remaining (later, optional)
+- [ ] REQ-0013 smoke tests, FAQ extract, SameSite session
 - [ ] Gate 2 / Red Team
+- [ ] favicon.ico 404 (cosmetic)
 
 ## Next
-After CF deploy: open demo, confirm health + tunnel; check Sentry Issues.
+Stop here unless new feature request.
